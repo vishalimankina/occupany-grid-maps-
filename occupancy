@@ -1,0 +1,114 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import splprep, splev
+def create_map_with_obstacles(grid_size, num_obstacles, start, goal):
+    """
+    Creates a grid map with randomly placed obstacles and marks start and goal.
+
+    Args:
+        grid_size: Tuple (width, height) specifying the dimensions of the grid.
+        num_obstacles: Number of obstacles to place on the grid.
+        start: Tuple (x, y) starting position of the agent.
+        goal: Tuple (x, y) goal position.
+
+    Returns:
+        occupancy_grid: 2D numpy array representing the map with obstacles, start, and goal.
+    """
+    occupancy_grid = np.zeros(grid_size, dtype=int)
+
+    # Place obstacles randomly
+    obstacles_placed = 0
+    while obstacles_placed < num_obstacles:
+        x = np.random.randint(0, grid_size[0])
+        y = np.random.randint(0, grid_size[1])
+
+        if occupancy_grid[x, y] == 0 and (x, y) != start and (x, y) != goal:
+            occupancy_grid[x, y] = 1  # Mark obstacle
+            obstacles_placed += 1
+
+    # Mark start and goal
+    occupancy_grid[start] = 2  # Start point
+    occupancy_grid[goal] = 3   # Goal point
+
+    return occupancy_grid
+
+#def generate_waypoints(start, goal, num_waypoints=10):
+ # waypoints = []
+  #while len(waypoints) < num_waypoints:
+   # x = np.random.randint(0, grid_size[0])
+    #y = np.random.randint(0, grid_size[1])
+    #if occupancy_grid[x, y] == 0 and (x, y) != start and (x, y) != goal:
+     # waypoints.append((x, y))
+      #occupancy_grid[x, y] = 4  # Mark as a waypoint
+  #return waypoints
+def generate_random_waypoints(grid_size, num_waypoints, occupancy_grid, start, goal):
+    waypoints = []
+    while len(waypoints) < num_waypoints:
+        x = np.random.randint(0, grid_size[0])
+        y = np.random.randint(0, grid_size[1])
+
+        if occupancy_grid[x, y] == 0 and (x, y) != start and (x, y) != goal:
+            waypoints.append((x, y))
+            occupancy_grid[x, y] = 4  # Mark as a waypoint
+
+    return waypoints
+
+def plot_map_with_b_spline_path(occupancy_grid, waypoints, start, goal):
+    """
+    Plots the grid map with grid lines, obstacles, start, goal, and waypoints.
+
+    Args:
+        occupancy_grid: 2D numpy array representing the map.
+        waypoints: List of waypoints as (x, y) tuples.
+    """
+    plt.figure(figsize=(8, 8))
+    cmap = plt.cm.get_cmap('binary', 5)
+    plt.imshow(occupancy_grid, cmap=cmap, origin='upper')
+
+    # Add grid lines
+    plt.grid(True, which='both', color='black', linestyle='-', linewidth=0.5)
+    plt.xticks(np.arange(-0.5, occupancy_grid.shape[1], 1), [])
+    plt.yticks(np.arange(-0.5, occupancy_grid.shape[0], 1), [])
+
+    # Add labels for start, goal, and waypoints
+    for (j, i), val in np.ndenumerate(occupancy_grid):
+        if val == 2:
+            plt.text(i, j, 'S', ha='center', va='center', color='blue', fontweight='bold')
+        elif val == 3:
+            plt.text(i, j, 'G', ha='center', va='center', color='green', fontweight='bold')
+
+    # Plot waypoints and connect them in order
+    if waypoints:
+        # Combine start, waypoints, and goal
+        path_points = [start] + waypoints + [goal]
+        x_coords, y_coords = zip(*path_points)
+
+        # B-spline fitting
+        tck, _ = splprep([x_coords, y_coords], s=2)  # `s` smooths the curve (set it to 0 for exact fit)
+        x_fine, y_fine = splev(np.linspace(0, 1, 500), tck)
+
+        # Plot B-spline curved path
+        plt.plot(y_fine, x_fine, color="blue", linestyle='-', linewidth=2, label='Path')
+
+        # Plot waypoints and label each
+        plt.plot(y_coords, x_coords, 'ro', label='Waypoints')
+        for idx, (x, y) in enumerate(waypoints):
+            plt.text(y, x, f'{idx+1}', ha='center', va='center', color='white', fontweight='bold')
+
+    plt.title("Map with Obstacles, Smooth B-Spline Path, and Waypoints")
+    plt.legend()
+    plt.show()
+
+# Parameters
+grid_size = (50, 50)      # 10x10 grid
+num_obstacles = 100        # Number of obstacles
+start = (0, 0)            # Start position
+goal = (30, 30)
+num_waypoints = 10            # Goal position
+
+# Create the map and generate waypoints
+occupancy_grid = create_map_with_obstacles(grid_size, num_obstacles, start, goal)
+waypoints = generate_random_waypoints(grid_size, num_waypoints, occupancy_grid, start, goal)
+
+# Plot the map with obstacles, start, goal, and waypoints
+plot_map_with_b_spline_path(occupancy_grid, waypoints, start, goal)
