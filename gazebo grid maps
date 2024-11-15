@@ -1,0 +1,145 @@
+To adapt this code to use **occupancy grid maps for obstacle avoidance and path planning** in a Gazebo environment, you would need to modify the current approach to include an optimization model that considers obstacle data from an occupancy grid. The occupancy grid map would provide information about which cells in the environment are occupied by obstacles, allowing the agent to plan a path while avoiding these areas.
+
+Here’s a high-level approach for integrating occupancy grid-based path planning and obstacle avoidance into your code:
+
+### Step 1: Set Up the Occupancy Grid Map in ROS
+1. **Define an Occupancy Grid Message**:
+   - Use `nav_msgs/OccupancyGrid` in ROS to represent the occupancy grid map. This message type allows you to encode grid information, with cells representing either free, occupied, or unknown space.
+   - Each cell in the grid can have a value:
+     - `0` for free space,
+     - `100` for occupied space (obstacles),
+     - `-1` for unknown space.
+
+2. **Publish the Occupancy Grid**:
+   - If you have a static occupancy grid (e.g., predefined map of obstacles in the environment), publish this map using a ROS publisher to a topic (e.g., `/map`).
+   - If you want the occupancy grid to update dynamically (e.g., if obstacles move), consider using a **lidar or camera-based SLAM (Simultaneous Localization and Mapping)** node to build the occupancy grid map in real-time.
+
+### Step 2: Implement Path Planning with the Occupancy Grid
+1. **Integrate a Path Planning Algorithm**:
+   - Choose a suitable path planning algorithm like **A* (A-star), Dijkstra’s algorithm, or D* Lite** to work with occupancy grids. These algorithms can search for a path from the start to the goal while avoiding occupied cells.
+   - Another option is to use the **ROS `move_base` node** in combination with the **`global_planner`** and **`local_planner`** plugins, which can automatically use the occupancy grid to plan paths. `move_base` is a standard package in ROS that handles path planning and execution by interacting with occupancy grids and robot controllers.
+
+2. **Modify the Path Generation Logic**:
+   - Replace the hard-coded `path2follow` waypoints with dynamically generated waypoints using the chosen path planning algorithm.
+   - The algorithm should take the boat’s current position, goal position, and occupancy grid data as inputs and output a collision-free path.
+   
+3. **Update the Code to Use Planned Path**:
+   - Replace the previous static list of waypoints (`path2follow`) with the dynamically generated path based on the occupancy grid.
+   - Each step of the path planning algorithm will produce waypoints that are checked for occupancy grid status to ensure they are free of obstacles.
+   
+Here’s an outline of how you might modify the code to integrate the occupancy grid-based path planning:
+
+### Code Modifications
+
+#### 1. Initialize and Subscribe to the Occupancy Grid
+
+In your class initialization method (`__init__`), add a subscriber to receive the occupancy grid map:
+```python
+import rospy
+from nav_msgs.msg import OccupancyGrid
+
+class EsailorAgent:
+    def __init__(self):
+        # Existing initialization code
+        # ...
+        
+        # Subscribe to the occupancy grid map
+        self.occupancy_grid = None
+        rospy.Subscriber("/map", OccupancyGrid, self.update_occupancy_grid)
+
+    def update_occupancy_grid(self, msg):
+        """Callback to update occupancy grid map when received."""
+        self.occupancy_grid = msg.data  # Store grid data, or process into a usable format
+```
+
+#### 2. Implement the Path Planner Function
+
+Define a function that performs path planning on the occupancy grid. Below is an example using A*:
+```python
+import numpy as np
+from some_path_planning_library import AStarPlanner  # Placeholder import
+
+class EsailorAgent:
+    # ... Existing methods ...
+
+    def plan_path(self, start, goal):
+        """Plan a path avoiding obstacles using A* or another algorithm."""
+        # Check if the occupancy grid map is available
+        if self.occupancy_grid is None:
+            rospy.logwarn("Occupancy grid is not available yet.")
+            return []
+
+        # Initialize path planner with occupancy grid data
+        grid = np.array(self.occupancy_grid).reshape((grid_height, grid_width))  # Format the occupancy grid
+
+        # Initialize path planner with grid, start, and goal positions
+        planner = AStarPlanner(grid)
+        path = planner.find_path(start, goal)  # Returns a list of waypoints [(x, y), ...]
+
+        # Convert path into a ROS-compatible format or store for further use
+        return path
+```
+
+#### 3. Update `pidTest` to Use Planned Path
+
+Replace the manual `path2follow` path generation with dynamic planning based on the occupancy grid map:
+```python
+def pidTest(self, baseDistance=100.0):
+    # Existing initialization and setup code ...
+    
+    # Set start and goal positions for path planning
+    start = (0, 0)  # Or use the current position of the boat
+    goal = (target_x, target_y)  # Replace with actual target position
+    
+    # Plan path using occupancy grid
+    path2follow = self.plan_path(start, goal)  # Dynamic path planning
+
+    if not path2follow:
+        rospy.logwarn("No path found, terminating test.")
+        return
+
+    # Process each waypoint in the planned path
+    for i, waypoint in enumerate(path2follow):
+        # Move to each waypoint as in the original code
+        # Update model_pose to move to the next waypoint
+        model_pose.position.x = waypoint[0]
+        model_pose.position.y = waypoint[1]
+        self.spawnSDFModel("wayPointMarker", sdffilepath, model_pose)
+        
+        print(f"Going to waypoint {i}: {waypoint}")
+        
+        # Control the agent with a similar feedback loop
+        mission = True
+        duration = 0
+        while mission and duration < 20:
+            # Use observations to calculate actions
+            obsData = rospy.wait_for_message(f"/{model_namespace}/mission_control/observations", Float32MultiArray, timeout=20).data
+            obs = np.array(obsData)
+            # Calculate control actions based on sensor data and publish actions
+            # ... (Control logic remains similar)
+
+            if obs[0] <= 5:  # If the waypoint is reached
+                mission = False
+            else:
+                duration += 1
+
+        # Clear waypoint marker after reaching it
+        rospy.wait_for_service("/gazebo/delete_model")
+        _ = delmodel("wayPointMarker")
+```
+
+#### 4. Optimize Path and Adjust Control Logic
+- To optimize the path, add additional logic to re-plan the path if obstacles are detected dynamically (like a dynamic re-planning mechanism).
+- You may also consider adjusting the control logic so that it steers the boat smoothly along the planned path using either a **PID controller** or a **model predictive control (MPC)** approach, if feasible.
+
+#### 5. (Optional) Visualize the Path
+In the previous plotting section, visualize the planned path to debug and verify that the agent is following a collision-free path.
+
+### Summary of Changes
+
+- **Set up** the occupancy grid map to represent obstacles.
+- **Implement a path planner** (e.g., A*) that uses the occupancy grid for collision avoidance.
+- **Replace the static path** generation (`path2follow`) with a dynamic path derived from the occupancy grid.
+- **Adjust the control loop** to steer the agent along this dynamic path, ensuring it avoids obstacles detected in the grid.
+
+With these changes, the agent will be able to use the occupancy grid to find an optimal path, avoid obstacles, and navigate safely in the Gazebo environment.
